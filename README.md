@@ -11,8 +11,6 @@ cd vertex-ai-claude-load-balancer
 sed -i -e 's/PROJECT_ID_1/YOUR_PROJECT_ID/g' haproxy.cfg
 sed -i -e 's/PROJECT_ID_2/YOUR_ANOTHER_PROJECT_ID/g' haproxy.cfg
 
-sed -i -e 's/YOUR_PROJECT_ID/PROJECT_ID_1/g' haproxy.cfg
-sed -i -e 's/YOUR_ANOTHER_PROJECT_ID/PROJECT_ID_2/g' haproxy.cfg
 # build image 
 docker build -t vertex-ai-claude-load-balancer .
 
