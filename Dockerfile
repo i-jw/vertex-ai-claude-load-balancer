@@ -43,6 +43,7 @@ RUN apk add --no-cache ca-certificates jemalloc && \
     groupadd "$HAPROXY_GID" && \
     useradd -g "$HAPROXY_GID" "$HAPROXY_UID" && \
     mkdir -p /tmp/haproxy && \
+    mkdir -p /data && \
     mkdir -p /run/haproxy/ && \
     tar -xzf haproxy.tar.gz -C /tmp/haproxy --strip-components=1 && \
     rm -f haproxy.tar.gz && \
