@@ -22,29 +22,80 @@ gcloud artifacts repositories create $REPOSITORY_NAME --repository-format=docker
 git clone https://github.com/i-jw/vertex-ai-claude-load-balancer.git
 cd vertex-ai-claude-load-balancer
 
-# 修改配置文件，替换项目ID
-
-sed -i -e 's/PROJECT_ID_1/YOUR_PROJECT_ID/g' haproxy.cfg
-sed -i -e 's/PROJECT_ID_2/YOUR_ANOTHER_PROJECT_ID/g' haproxy.cfg
-
 # 编译并推送镜像到仓库
 gcloud builds submit --region=$LOCATION --tag $LOCATION-docker.pkg.dev/$PROJECT_ID/$REPOSITORY_NAME/haproxy:v0 .
 ```
+## 创建project id map
+```shell
+cat << EOF > projects.map
+num  3
+0  PROJECT_ID_0
+1  PROJECT_ID_1
+2  PROJECT_ID_2
+EOF
 
+```
 ## 部署容器到cloud run
 ```shell
+
+gcloud storage buckets create gs://BUCKET_NAME --location $LOCATION
+gcloud storage buckets cp projects.map gs://BUCKET_NAME/claude-lb-folder/projects.map
+
+
 gcloud run deploy vertex-ai-claude-load-balancer \
- --container haproxy \
- --image='$LOCATION-docker.pkg.dev/$PROJECT_ID/$REPOSITORY_NAME/haproxy:v0 \
- --port='80'
+    --container haproxy \
+    --region $LOCATION  \
+    --port 80  \
+    --image $LOCATION-docker.pkg.dev/$PROJECT_ID/$REPOSITORY_NAME/haproxy:v0  \
+    --add-volume name=project-map,type=cloud-storage,bucket=BUCKET_NAME,mount-options="only-dir=claude-lb-folder" \
+    --add-volume-mount volume=project-map,mount-path=/data
+ 
+gcloud beta run services update haproxy-claude \
+    --region $LOCATION  \
+    --port 80  \
+    --image $LOCATION-docker.pkg.dev/$PROJECT_ID/$REPOSITORY_NAME/haproxy:v0  \
+    --add-volume name=project-map,type=cloud-storage,bucket=BUCKET_NAME,mount-options="only-dir=claude-lb-folder" \
+    --add-volume-mount volume=project-map,mount-path=/data
+
 ```
 
 ## 测试
 ```shell
-curl --verbose -L -i -X POST \
-  -H "Authorization: Bearer $TOKEN" \
+cat << EOF > request.json
+{
+  "anthropic_version": "vertex-2023-10-16",
+  "messages": [
+    {
+      "role": "user",
+      "content": [
+        {
+          "type": "image",
+          "source": {
+            "type": "base64",
+            "media_type": "image/png",
+            "data": "iVBORw0KGg..."
+          }
+        },
+        {
+          "type": "text",
+          "text": "What is in this image?"
+        }
+      ]
+    }
+  ],
+  "max_tokens": 256,
+  "stream": true
+}
+EOF
+
+PROJECT_ID=your-gcp-project-id
+MODEL=claude-3-5-haiku@20241022
+LOCATION=us-east5
+
+curl -X POST \
+  -H "Authorization: Bearer $(gcloud auth print-access-token)" \
   -H "Content-Type: application/json; charset=utf-8" \
   -d @request.json \
-"http://container-ip-address:port/v1"
+"http://container-ip-address:port/v1/projects/$PROJECT_ID/locations/$LOCATION/publishers/anthropic/models/$MODEL:streamRawPredict"
 
 ```
