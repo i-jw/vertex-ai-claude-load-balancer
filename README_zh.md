@@ -37,20 +37,19 @@ EOF
 ```
 ## 部署容器到cloud run
 ```shell
-
-gcloud storage buckets create gs://BUCKET_NAME --location $LOCATION
+BUCKET_NAME=BUCKET_NAME
+gcloud storage buckets create gs://$BUCKET_NAME --location $LOCATION
 gcloud storage buckets cp projects.map gs://BUCKET_NAME/claude-lb-folder/projects.map
 
-
-gcloud run deploy vertex-ai-claude-load-balancer \
-    --container haproxy \
+gcloud beta run deploy vertex-ai-claude-load-balancer \
+    --allow-unauthenticated \
     --region $LOCATION  \
     --port 80  \
     --image $LOCATION-docker.pkg.dev/$PROJECT_ID/$REPOSITORY_NAME/haproxy:v0  \
     --add-volume name=project-map,type=cloud-storage,bucket=BUCKET_NAME,mount-options="only-dir=claude-lb-folder" \
     --add-volume-mount volume=project-map,mount-path=/data
- 
-gcloud beta run services update haproxy-claude \
+
+gcloud beta run services update vertex-ai-claude-load-balancer \
     --region $LOCATION  \
     --port 80  \
     --image $LOCATION-docker.pkg.dev/$PROJECT_ID/$REPOSITORY_NAME/haproxy:v0  \
