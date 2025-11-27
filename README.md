@@ -24,7 +24,7 @@ cd vertex-ai-claude-load-balancer
 # build image and push to repository
 gcloud builds submit --region=$LOCATION --tag $LOCATION-docker.pkg.dev/$PROJECT_ID/$REPOSITORY_NAME/haproxy:v0 .
 ```
-##  create project id map
+##  create project id map if you want to load balance between multi project
 ```shell
 cat << EOF > projects.map
 num  3
@@ -55,6 +55,11 @@ gcloud beta run services update vertex-ai-claude-load-balancer \
     --add-volume name=project-map,type=cloud-storage,bucket=BUCKET_NAME,mount-options="only-dir=claude-lb-folder" \
     --add-volume-mount volume=project-map,mount-path=/data
 
+
+gcloud beta run services create vertex-ai-proxy \
+    --region $LOCATION  \
+    --port 80  \
+    --image $LOCATION-docker.pkg.dev/$PROJECT_ID/$REPOSITORY_NAME/vertex_proxy:v0  \
 ```
 
 ### testing

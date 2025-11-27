@@ -1,0 +1,109 @@
+global
+  # log to stdout
+  log stdout format raw local0 debug
+  stats socket ipv4@127.0.0.1:9999 level admin
+  stats socket /var/run/hapee-lb.sock mode 666 level admin
+  stats timeout 2m
+
+defaults
+  log               global
+  option            httplog
+  retries           3
+  maxconn           2000
+  timeout connect   50s
+  timeout client    50s
+  timeout server    50s
+  timeout client-fin 30s
+  timeout tunnel 10h
+
+resolvers kube-dns
+  # kubernetes DNS is defined in resolv.conf
+  parse-resolv-conf
+  hold valid 10s
+
+frontend  main
+  bind *:80
+  mode http
+
+  option http-keep-alive
+  http-request set-var(txn.num) str("num"),map(/data/projects.map)
+  http-request set-var(txn.random_index) rand(2) if { var(txn.num) -m int eq 2 }
+  http-request set-var(txn.random_index) rand(3) if { var(txn.num) -m int eq 3 }
+  http-request set-var(txn.random_index) rand(4) if { var(txn.num) -m int eq 4 }
+  http-request set-var(txn.random_index) rand(5) if { var(txn.num) -m int eq 5 }
+  http-request set-header random_index %[var(txn.random_index)]
+  http-request capture req.hdr(project) len 100
+  http-request capture req.hdr(random_index) len 100
+  http-request capture req.hdr(model) len 100
+
+  http-request set-header project "%[var(txn.random_index),map(/data/projects.map)]" if { var(txn.random_index) -m found }
+  http-request set-header model claude-3-5-sonnet@20240620 if { path -m reg claude-3-5-sonnet@20240620 }
+  http-request set-header model claude-3-5-haiku@20241022 if { path -m reg claude-3-5-haiku@20241022 }
+
+  use_backend sonnet if { path -m reg claude-3-5-sonnet@20240620 }
+  use_backend haiku if { path -m reg claude-3-5-haiku@20241022 }
+
+backend acct_us
+  mode http
+  option tcp-check
+  retry-on 429
+  retries 1
+  http-request set-path /v1/projects/%[req.hdr(project)]/locations/us-east5/publishers/anthropic/models/%[req.hdr(model)]:streamRawPredict
+  http-request set-header host us-east5-aiplatform.googleapis.com
+  server us us-east5-aiplatform.googleapis.com:443 check ssl verify none
+  use_backend acct_eu if { status 429 }
+
+backend acct_eu
+  mode http
+  option tcp-check
+  retry-on 429
+  retries 1
+  http-request set-path /v1/projects/%[req.hdr(project)]/locations/europe-west1/publishers/anthropic/models/%[req.hdr(model)]:streamRawPredict
+  http-request set-header host europe-west1-aiplatform.googleapis.com
+  server eu europe-west1-aiplatform.googleapis.com:443 check ssl verify none
+  use_backend acct_as if { status 429 }
+
+backend acct_as
+  mode http
+  option tcp-check
+  retry-on 429
+  retries 1
+  http-request set-path /v1/projects/%[req.hdr(project)]/locations/asia-southeast1/publishers/anthropic/models/%[req.hdr(model)]:streamRawPredict
+  http-request set-header host asia-southeast1-aiplatform.googleapis.com
+  server as asia-southeast1-aiplatform.googleapis.com:443 check ssl verify none
+  use_backend acct_us if { status 429 }
+
+backend sonnet
+  mode http
+  option redispatch 4
+  balance roundrobin
+  retry-on 429
+  server us_01 unix@/run/haproxy/us_01.sock weight 10
+  server eu_01 unix@/run/haproxy/eu_01.sock weight 10
+  server as_01 unix@/run/haproxy/as_01.sock weight 10
+
+backend haiku
+  mode http
+  option redispatch 4
+  option tcp-check
+  retry-on 429
+  retries 4
+  server us_02 unix@/run/haproxy/us_01.sock
+
+listen us_01
+  mode http
+  no log
+  bind unix@/run/haproxy/us_01.sock
+  use_backend acct_us
+
+listen eu_01
+  mode http
+  no log
+  bind unix@/run/haproxy/eu_01.sock
+  use_backend acct_eu
+
+listen as_01
+  mode http
+  no log
+  bind unix@/run/haproxy/as_01.sock
+  use_backend acct_as
