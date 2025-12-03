@@ -56,7 +56,7 @@ gcloud beta run services update vertex-ai-claude-load-balancer \
     --add-volume-mount volume=project-map,mount-path=/data
 
 
-gcloud beta run services create vertex-ai-proxy \
+gcloud beta run services deploy vertex-ai-proxy \
     --region $LOCATION  \
     --port 80  \
     --image $LOCATION-docker.pkg.dev/$PROJECT_ID/$REPOSITORY_NAME/vertex_proxy:v0  \
